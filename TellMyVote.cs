@@ -45,30 +45,32 @@ namespace Oxide.Plugins
 
     public class TellMyVote : RustPlugin
     {
-        const string debutcolonne1 = "0.03";
-        const string fincolonne1 = "0.37";
-        const string debutcolonne1b = "0.38";
-        const string fincolonne1b = "0.48";
-        const string debutcolonne2 = "0.52";
-        const string fincolonne2 = "0.86";
-        const string debutcolonne2b = "0.87";
-        const string fincolonne2b = "0.97";
-        const string basligne8 = "0.05";
-        const string hautligne8 = "0.13";
-        const string basligne7 = "0.14";
-        const string hautligne7 = "0.22";
-        const string basligne6 = "0.23";
-        const string hautligne6 = "0.31";
-        const string basligne5 = "0.32";
-        const string hautligne5 = "0.40";
-        const string basligne4 = "0.41";
-        const string hautligne4 = "0.49";
-        const string basligne3 = "0.50";
-        const string hautligne3 = "0.59";
-        const string basligne2 = "0.60";
-        const string hautligne2 = "0.68";
-        const string basligne1 = "0.69";
-        const string hautligne1 = "0.77";
+
+        /*
+         * For left to right alignment, we need to satisfy the following generic formula :
+         * MARGIN_LR * 2 + SEP_POLL + ( SEP_IN + SIZE_SUBCOL_1 + SIZE_SUBCOL_2 ) * 2 = 1.00
+         *
+         * For top to bottom alignment, we need to satisfy the following generic formula :
+         * MARGIN_TB * 2 + SEP_POLL + SEP_IN * 6 + SIZE_ROW * 8 = 1.00
+         *
+         */
+
+        const float MARGIN_LR = 0.03f; // Left / Right borders margins.
+        const float MARGIN_TB = 0.05f; // Top / Bottom borders margins.
+        const float SEP_POLL = 0.04f; // Polls separator
+        const float SEP_IN = 0.01f; // In-between rows and columns separators.
+
+        const float SIZE_SUBCOL_1 = 0.34f; // Answer button width
+        const float SIZE_SUBCOL_2 = 0.10f; // count button width
+        const float SIZE_ROW = 0.08f; // Each row height
+
+        const float PollWidth = SIZE_SUBCOL_1 + SIZE_SUBCOL_2 + SEP_IN;
+        const float PollHeight = SIZE_ROW * 4 + SEP_IN * 3;
+
+        //precalculate rows and columns coordinates from floats to "x.xx" strings
+        string[] pos_rows = new string[16];
+        string[] pos_cols = new string[8];
+
         const string HelpButtonTxt = "0.0 1.0 1.0 0.5";
         const string HelpButtonColor = "0.0 0.5 1.0 0.5";
         const string PanelColor = "0.0 0.0 0.0 0.8";
@@ -76,13 +78,12 @@ namespace Oxide.Plugins
         const string QuestionColor = "1.0 1.0 1.0 1.0";
         const string AnswerColor = "0.5 1.0 0.5 0.5";
         const string CountColor = "0.0 1.0 1.0 0.5";
-
-        const string version = "version 1.0.0";
+        const string version = "version 1.1.0";
         const bool debug = false;
         const string TMVAdmin = "tellmyvote.admin";
         static string MyVotePanel;
         static string MyVoteInfoPanel;
-        string Prefix = "[TMV] :";                       // CHAT PLUGIN PREFIX
+        string Prefix = "[TMV] :";                      // CHAT PLUGIN PREFIX
         string PrefixColor = "#c12300";                 // CHAT PLUGIN PREFIX COLOR
         string ChatColor = "#ffcd7c";                   // CHAT MESSAGE COLOR
         ulong SteamIDIcon = 76561198215959719;          // SteamID FOR PLUGIN ICON
@@ -97,6 +98,7 @@ namespace Oxide.Plugins
         {
             LoadVariables();
             permission.RegisterPermission(TMVAdmin, this);
+            GenerateCoordinates();
             storedData = Interface.Oxide.DataFileSystem.ReadObject<StoredData>("TellMyVote");
         }
 
@@ -108,29 +110,50 @@ namespace Oxide.Plugins
             LoadVariables();
         }
 
+        private void GenerateCoordinates()
+        {
+            for (int i = 0; i < pos_rows.Length; i++)
+            {
+                int polls = i / 8;         // 0, 0, 0, 0, 0, 0, 0, 0, 1...
+                int rows = i % 8;         //0, 1, 2, 3, 4, 5, 6, 7, 0...
+                pos_rows[pos_rows.Length - i - 1] = ((MARGIN_TB //y coordinates are inverted...
+                                + polls * (PollHeight + SEP_IN) //Polls separation (is 0 for i in [0...7])
+                                + (rows / 2) * SEP_IN
+                                + ((rows + 1) / 2) * SIZE_ROW //Rows end : 0, 1, 1, 2, 2, 3, 3, 4, 0...
+                              )).ToString("F", CultureInfo.InvariantCulture);
+                if (debug) { Puts($"pos_rows[{pos_rows.Length - i - 1}] = {pos_rows[pos_rows.Length - i - 1]}"); }
+            }
+
+            for (int i = 0; i < pos_cols.Length; i++)
+            {
+                int polls = i / 4;           // 0, 0, 0, 0, 1, 1, 1, 1
+                int columns = i % 4;         // 0, 1, 2, 3, 0, 1, 2, 4
+                int subcolumn = columns / 2; // 0, 0, 1, 1, 0, 0, 1, 1
+                pos_cols[i] = (MARGIN_LR
+                                + polls * (PollWidth + SEP_POLL) //Poll separation (is 0 for i in [0..3])
+                                + (columns / 2) * (SIZE_SUBCOL_1 + SEP_IN) //Answer or Result column begins
+                                + (columns % 2) * (subcolumn == 1 ? SIZE_SUBCOL_2 : SIZE_SUBCOL_1) //Answer or Result column end
+                              ).ToString("F", CultureInfo.InvariantCulture);
+                if (debug) { Puts($"pos_col[{i}] = {pos_cols[i]}"); }
+            }
+        }
+
         private void LoadVariables()
         {
-            Prefix = Convert.ToString(GetConfig("Chat Settings", "Prefix", "[TMV] :"));                       // CHAT PLUGIN PREFIX
-            PrefixColor = Convert.ToString(GetConfig("Chat Settings", "PrefixColor", "#c12300"));                // CHAT PLUGIN PREFIX COLOR
-            ChatColor = Convert.ToString(GetConfig("Chat Settings", "ChatColor", "#ffcd7c"));                    // CHAT  COLOR
+            Prefix = Convert.ToString(GetConfig("Chat Settings", "Prefix", "[TMV] :"));                     // CHAT PLUGIN PREFIX
+            PrefixColor = Convert.ToString(GetConfig("Chat Settings", "PrefixColor", "#c12300"));           // CHAT PLUGIN PREFIX COLOR
+            ChatColor = Convert.ToString(GetConfig("Chat Settings", "ChatColor", "#ffcd7c"));               // CHAT  COLOR
             SteamIDIcon = Convert.ToUInt64(GetConfig("Settings", "SteamIDIcon", 76561198215959719));        // SteamID FOR PLUGIN ICON
             BannerTimer = Convert.ToSingle(GetConfig("TIMER", "Vote Banner will display every (in minutes)", "10"));
-            polls[0, 0] = Convert.ToString(GetConfig("Poll #1", "Question", "set your question here"));
-            polls[0, 1] = Convert.ToString(GetConfig("Poll #1", "Answer#1", "set answer here"));
-            polls[0, 2] = Convert.ToString(GetConfig("Poll #1", "Answer#2", "set answer here"));
-            polls[0, 3] = Convert.ToString(GetConfig("Poll #1", "Answer#3", "set answer here"));
-            polls[1, 0] = Convert.ToString(GetConfig("Poll #2", "Question", "set your question here"));
-            polls[1, 1] = Convert.ToString(GetConfig("Poll #2", "Answer#1", "set answer here"));
-            polls[1, 2] = Convert.ToString(GetConfig("Poll #2", "Answer#2", "set answer here"));
-            polls[1, 3] = Convert.ToString(GetConfig("Poll #2", "Answer#3", "set answer here"));
-            polls[2, 0] = Convert.ToString(GetConfig("Poll #3", "Question", "set your question here"));
-            polls[2, 1] = Convert.ToString(GetConfig("Poll #3", "Answer#1", "set answer here"));
-            polls[2, 2] = Convert.ToString(GetConfig("Poll #3", "Answer#2", "set answer here"));
-            polls[2, 3] = Convert.ToString(GetConfig("Poll #3", "Answer#3", "set answer here"));
-            polls[3, 0] = Convert.ToString(GetConfig("Poll #4", "Question", "set your question here"));
-            polls[3, 1] = Convert.ToString(GetConfig("Poll #4", "Answer#1", "set answer here"));
-            polls[3, 2] = Convert.ToString(GetConfig("Poll #4", "Answer#2", "set answer here"));
-            polls[3, 3] = Convert.ToString(GetConfig("Poll #4", "Answer#3", "set answer here"));
+            for (int poll = 0; poll < polls.GetLength(0); poll++)
+            {
+                for (int answer = 0; answer < polls.GetLength(1); answer++)
+                {
+                    string dataValue = answer > 0 ? "Answer#" + answer : "Question";
+                    string defaultValue = answer > 0 ? "set answer here" : "set your question here";
+                    polls[poll, answer] = Convert.ToString(GetConfig("Poll #" + (poll + 1), dataValue, defaultValue));
+                }
+            }
 
             if (!ConfigChanged) return;
             SaveConfig();
@@ -195,13 +218,10 @@ namespace Oxide.Plugins
             {
                 {"NoPermMsg", "You don't have admin permission."},
                 {"AdminPermMsg", "You are allowed as admin. You can start/end/clear the votes."},
-                {"ThankVoteMsg", "Thank you for your vote."},
-                {"PopNewMsg", "Check and vote at the new poll with /myvote"},
                 {"QAlreadyMsg", "You already have voted for this Question"},
                 {"VoteLogMsg", "Thank you, we recorded your vote for Question"},
-                {"VoteBannerMsg", "To help our community : please vote with /myvote"},
+                {"VoteBannerMsg", "To help our community : please vote with /myvote or click here"},
                 {"TMVoffMsg", "Vote session is now over."},
-                {"TMVonMsg", "A new vote session is open."},
                 {"PurgeMsg", "Counters has been reset"},
                 {"Info01Msg", "Players with admin permission can start/end/clear votes from main panel"},
                 {"Info02Msg", "Questions/Answers has to be set from TellMyVote.json config file or with chat command /myvote_poll."},
@@ -213,19 +233,16 @@ namespace Oxide.Plugins
 
             lang.RegisterMessages(new Dictionary<string, string>
             {
-                {"NoPermMsg", "Vous n'avez pas la permission administrateur."},
+                {"NoPermMsg", "Vous n'avez pas la permission."},
                 {"AdminPermMsg", "Vous êtes admin. et avez accès aux commandes start/end/clear."},
-                {"ThankVoteMsg", "Thank you for your vote."},
-                {"PopNewMsg", "Jetez un coup d'oeil au sondage /myvote !"},
-                {"QAlreadyMsg", "Vous avez déjà voté à cette Question"},
+                {"QAlreadyMsg", "Vous avez déjà voté à cette question."},
                 {"VoteLogMsg", "Merci, nous avons enregistré votre choix."},
-                {"VoteBannerMsg", "Pour aider la communaté : votez avec /myvote"},
+                {"VoteBannerMsg", "Pour aider la communauté : votez avec /myvote ou cliquez ici"},
                 {"TMVoffMsg", "Le sondage est maintenant terminé."},
-                {"TMVonMsg", "Un nouveau sondage est lancé."},
-                {"PurgeMsg", "Les compteurs sont remis à zéro"},
+                {"PurgeMsg", "Les compteurs sont remis à zéro."},
                 {"Info01Msg", "La permission .admin permet de lancer/stopper/purger depuis le panneau principal"},
                 {"Info02Msg", "Les Questions/Réponses sont à définir depuis le fichier de config TellMyVote.json ou avec la commande chat /myvote_poll."},
-                {"Info03Msg", "SI UNE QUESTION EST LAISSéE VIDE : elle et ses questions ne seront pas affichés."},
+                {"Info03Msg", "SI UNE QUESTION EST LAISSÉE VIDE : elle et ses questions ne seront pas affichées."},
                 {"Info04Msg", "SI UNE REPONSE EST VIDE : son bouton ne s'affichera pas."},
                 {"HowToMsg", "S'il vous plait utilisez ce format :\n/myvote_poll 1 0 taper ici le titre#1 - consultez la page du plugin"},
 
@@ -236,24 +253,27 @@ namespace Oxide.Plugins
 
         class StoredData
         {
-            public int[] answers = new int[12];
-            public List<ulong> voted01 = new List<ulong>();
-            public List<ulong> voted02 = new List<ulong>();
-            public List<ulong> voted03 = new List<ulong>();
-            public List<ulong> voted04 = new List<ulong>();
-            public List<ulong>[] votes = new List<ulong>[12] {
-                new List<ulong>(),
-                new List<ulong>(),
-                new List<ulong>(),
-                new List<ulong>(),
-                new List<ulong>(),
-                new List<ulong>(),
-                new List<ulong>(),
-                new List<ulong>(),
-                new List<ulong>(),
-                new List<ulong>(),
-                new List<ulong>(),
-                new List<ulong>()
+            public List<ulong>[,] votes = new List<ulong>[4, 3] {
+                {
+                    new List<ulong>(),
+                    new List<ulong>(),
+                    new List<ulong>()
+                },
+                {
+                    new List<ulong>(),
+                    new List<ulong>(),
+                    new List<ulong>()
+                },
+                {
+                    new List<ulong>(),
+                    new List<ulong>(),
+                    new List<ulong>()
+                },
+                {
+                    new List<ulong>(),
+                    new List<ulong>(),
+                    new List<ulong>()
+                }
             };
             public bool myVoteIsON;
 
@@ -296,7 +316,7 @@ namespace Oxide.Plugins
                 }
                 catch (Exception e)
                 {
-                    Puts("Une erreur est survenue: " + e);
+                    Puts("TellMyVotePollSet: An error occured: " + e);
                 }
             }
             else
@@ -322,7 +342,7 @@ namespace Oxide.Plugins
                 }
                 catch (Exception e)
                 {
-                    Puts("Une erreur est survenue: " + e);
+                    Puts("TellMyVotePollSet: An error occured: " + e);
                 }
             }
         }
@@ -336,6 +356,17 @@ namespace Oxide.Plugins
 
         #region VOTING
 
+        private bool voteNeeded(ulong playerID, int pollNum)
+        {
+            if (polls[pollNum, 0] == string.Empty) return false;
+            for (int i = 0; i < storedData.votes.GetLength(1); i++)
+            {
+                if (storedData.votes[pollNum, i].Contains(playerID))
+                    return false;
+            }
+            return true;
+        }
+
         [ConsoleCommand("TellMyVote")]
         private void MySurveySpotOnly(ConsoleSystem.Arg arg)
         {
@@ -343,71 +374,38 @@ namespace Oxide.Plugins
             ulong playerID = player.userID;
             int answernumber;
 
-            if (storedData.myVoteIsON == false)
-            {
-                Player.Message(player, $"<color={ChatColor}>{lang.GetMessage("TMVoffMsg", this, player.UserIDString)} #1</color>", $"<color={PrefixColor}> {Prefix} </color>", SteamIDIcon);
-                return;
-            }
             try
             {
-                answernumber = int.Parse(arg.Args.FirstOrDefault());
-                if (answernumber > 0 && answernumber <= 12)
+                answernumber = int.Parse(arg.Args.FirstOrDefault()) - 1;
+                if (answernumber >= 0 && answernumber < 12)
                 {
-                    if (answernumber <= 3)
+                    int pollnum = answernumber / 3;
+                    int parameter = answernumber % 3;
+                    if (storedData.myVoteIsON == false)
                     {
-                        if (storedData.voted01.Contains(playerID))
-                        {
-                            if (debug == true) { Puts($"-> answernumber = {answernumber} - POLL #1 - already voted"); }
-                            Player.Message(player, $"<color={ChatColor}>{lang.GetMessage("QAlreadyMsg", this, player.UserIDString)} #1</color>", $"<color={PrefixColor}> {Prefix} </color>", SteamIDIcon);
-                            return;
-                        }
-                        if (debug == true) { Puts($"-> answernumber = {answernumber} - POLL #1 vote recorded"); }
-                        storedData.voted01.Add(playerID);
-                        Player.Message(player, $"<color={ChatColor}>{lang.GetMessage("VoteLogMsg", this, player.UserIDString)} #1</color>", $"<color={PrefixColor}> {Prefix} </color>", SteamIDIcon);
+                        Player.Message(player, $"<color={ChatColor}>{lang.GetMessage("TMVoffMsg", this, player.UserIDString)} </color>", $"<color={PrefixColor}> {Prefix} </color>", SteamIDIcon);
                     }
-                    else if (answernumber >= 4 && answernumber <= 6)
+                    else
                     {
-                        if (storedData.voted02.Contains(playerID))
+
+                        if (voteNeeded(playerID, pollnum))
                         {
-                            if (debug == true) { Puts($"-> answernumber = {answernumber} - POLL #2 - already voted"); }
-                            Player.Message(player, $"<color={ChatColor}>{lang.GetMessage("QAlreadyMsg", this, player.UserIDString)} #2</color>", $"<color={PrefixColor}> {Prefix} </color>", SteamIDIcon);
-                            return;
+                            if (debug == true) { Puts($"-> answernumber = {answernumber + 1} - POLL #{pollnum + 1} vote recorded on {parameter + 1}"); }
+                            storedData.votes[pollnum, parameter].Add(playerID);
+                            Player.Message(player, $"<color={ChatColor}>{lang.GetMessage("VoteLogMsg", this, player.UserIDString)} #{pollnum + 1}</color>", $"<color={PrefixColor}> {Prefix} </color>", SteamIDIcon);
+                            RefreshMyVotePanel(player);
                         }
-                        if (debug == true) { Puts($"-> answernumber = {answernumber} - POLL #2 vote recorded"); }
-                        storedData.voted02.Add(playerID);
-                        Player.Message(player, $"<color={ChatColor}>{lang.GetMessage("VoteLogMsg", this, player.UserIDString)} #2</color>", $"<color={PrefixColor}> {Prefix} </color>", SteamIDIcon);
-                    }
-                    else if (answernumber >= 7 && answernumber <= 9)
-                    {
-                        if (storedData.voted03.Contains(playerID))
+                        else
                         {
-                            if (debug == true) { Puts($"-> answernumber = {answernumber} - POLL #3 - already voted"); }
-                            Player.Message(player, $"<color={ChatColor}>{lang.GetMessage("QAlreadyMsg", this, player.UserIDString)} #3</color>", $"<color={PrefixColor}> {Prefix} </color>", SteamIDIcon);
-                            return;
+                            if (debug == true) { Puts($"-> answernumber = {answernumber + 1} - POLL #{pollnum + 1} - already voted"); }
+                            Player.Message(player, $"<color={ChatColor}>{lang.GetMessage("QAlreadyMsg", this, player.UserIDString)} #{pollnum + 1}</color>", $"<color={PrefixColor}> {Prefix} </color>", SteamIDIcon);
                         }
-                        if (debug == true) { Puts($"-> answernumber = {answernumber} - POLL #3 vote recorded"); }
-                        storedData.voted03.Add(playerID);
-                        Player.Message(player, $"<color={ChatColor}>{lang.GetMessage("VoteLogMsg", this, player.UserIDString)} #3</color>", $"<color={PrefixColor}> {Prefix} </color>", SteamIDIcon);
                     }
-                    else if (answernumber >= 10 && answernumber <= 12)
-                    {
-                        if (storedData.voted04.Contains(playerID))
-                        {
-                            if (debug == true) { Puts($"-> answernumber = {answernumber} - POLL #4 - already voted"); }
-                            Player.Message(player, $"<color={ChatColor}>{lang.GetMessage("QAlreadyMsg", this, player.UserIDString)} #4</color>", $"<color={PrefixColor}> {Prefix} </color>", SteamIDIcon);
-                            return;
-                        }
-                        storedData.voted04.Add(playerID);
-                        Player.Message(player, $"<color={ChatColor}>{lang.GetMessage("VoteLogMsg", this, player.UserIDString)} #4</color>", $"<color={PrefixColor}> {Prefix} </color>", SteamIDIcon);
-                    }
-                    storedData.answers[answernumber - 1]++;
-                    storedData.votes[answernumber - 1].Add(playerID);
-                    RefreshMyVotePanel(player);
                 }
             }
             catch (Exception e)
             {
-                Puts("Une erreur est survenue: " + e);
+                Puts("MySurveySpotOnly: An error occured: " + e);
             }
         }
         #endregion
@@ -476,49 +474,75 @@ namespace Oxide.Plugins
 
         private void Purge()
         {
-            for (int i = 0; i < 12; i++) storedData.answers[i] = 0;
-            storedData.voted01.Clear();
-            storedData.voted02.Clear();
-            storedData.voted03.Clear();
-            storedData.voted04.Clear();
+            foreach (var polls in storedData.votes)
+            {
+                polls.Clear();
+            }
         }
 
         #region POPUP BANNER
 
-        private void PopUpVote(string newstate)
+        private void PopUpPlayer(BasePlayer player, string state)
         {
             string bannertxt = "";
-            foreach (BasePlayer player in BasePlayer.activePlayerList.Where(pl => pl.IsConnected)) //Lag was from here => using ALL the list instead of only connected players. Could be HUGE.
+
+            bool playerVoteNeeded = false;
+
+            for (int i = 0; i < storedData.votes.GetLength(0) && !playerVoteNeeded; i++)
             {
-                if (newstate == "start")
+                playerVoteNeeded = voteNeeded(player.userID, i);
+                if (debug) { Puts($"-> {player} Poll #{i} vote needed = {playerVoteNeeded}"); }
+            }
+
+            if (playerVoteNeeded || state == "end")
+            {
+                if (state == "start")
                 {
                     bannertxt = $"{lang.GetMessage("VoteBannerMsg", this, player.UserIDString)}";
                 }
-                else if (newstate == "end")
+                else if (state == "end")
                 {
                     bannertxt = $"{lang.GetMessage("TMVoffMsg", this, player.UserIDString)}";
-                    tmvbanner.Destroy();
                 }
 
                 CuiElementContainer CuiElement = new CuiElementContainer();
                 var MyVoteBanner = CuiElement.Add(new CuiPanel { Image = { Color = "0.5 1.0 0.5 0.5" }, RectTransform = { AnchorMin = "0.20 0.85", AnchorMax = "0.80 0.90" }, CursorEnabled = false });
                 var closeButton = new CuiButton { Button = { Close = MyVoteBanner, Color = "0.0 0.0 0.0 0.6" }, RectTransform = { AnchorMin = "0.90 0.01", AnchorMax = "0.99 0.99" }, Text = { Text = "X", FontSize = 18, Align = TextAnchor.MiddleCenter } };
                 CuiElement.Add(closeButton, MyVoteBanner);
-                CuiElement.Add(new CuiLabel { Text = { Text = $"{bannertxt}", FontSize = 20, Align = TextAnchor.MiddleCenter, Color = "0.0 0.0 0.0 1" }, RectTransform = { AnchorMin = "0.10 0.10", AnchorMax = "0.90 0.90" } }, MyVoteBanner);
+                CuiElement.Add(new CuiButton
+                {
+                    Button = { Command = "chat.say /myvote", Color = "0.0 0.0 0.0 0.0" },
+                    Text = { Text = $"{bannertxt}", FontSize = 20, Align = TextAnchor.MiddleCenter, Color = "0.0 0.0 0.0 1" },
+                    RectTransform = { AnchorMin = "0.10 0.10", AnchorMax = "0.90 0.90" }
+                }, MyVoteBanner);
                 CuiHelper.AddUi(player, CuiElement);
-                timer.Once(12f, () =>
+                timer.Once(state == "start" ? 30f : 10f, () =>
                 {
                     CuiHelper.DestroyUi(player, MyVoteBanner);
                 });
-                if (debug) { Puts($"-> TIMER IS SET TO {BannerTimer} minutes"); }
-                if (storedData.myVoteIsON == true)
+            }
+        }
+
+        private void PopUpVote(string newstate)
+        {
+            foreach (BasePlayer player in BasePlayer.activePlayerList.Where(pl => pl.IsConnected))
+            {
+                PopUpPlayer(player, newstate);
+            }
+            if (newstate == "start")
+            {
+                if (tmvbanner == null)
                 {
-                    if (debug) { Puts($"-> TIMER LOOP {BannerTimer * 60} seconds"); }
-                    tmvbanner = timer.Repeat(BannerTimer * 60, 0, () =>
-                     {
-                         PopUpVote("start");
-                     });
+                    tmvbanner = timer.Every(30f, () =>
+                    {
+                        PopUpVote("start");
+                    });
                 }
+            }
+            else
+            {
+                tmvbanner.Destroy();
+                tmvbanner = null;
             }
         }
 
@@ -591,9 +615,18 @@ namespace Oxide.Plugins
             #region PANEL AND CLOSE BUTTON
 
             var CuiElement = new CuiElementContainer();
-            MyVotePanel = CuiElement.Add(new CuiPanel { Image = { Color = $"{PanelColor}" }, RectTransform = { AnchorMin = "0.25 0.25", AnchorMax = "0.75 0.80" }, CursorEnabled = true });
-            var closeButton = new CuiButton { Button = { Close = MyVotePanel, Color = $"{buttonCloseColor}" }, RectTransform = { AnchorMin = "0.85 0.85", AnchorMax = "0.95 0.95" }, Text = { Text = "[X]\nClose", FontSize = 16, Align = TextAnchor.MiddleCenter } };
-            CuiElement.Add(closeButton, MyVotePanel);
+            MyVotePanel = CuiElement.Add(new CuiPanel
+            {
+                Image = { Color = $"{PanelColor}" },
+                RectTransform = { AnchorMin = "0.25 0.25", AnchorMax = "0.75 0.80" },
+                CursorEnabled = true
+            });
+            CuiElement.Add(new CuiButton
+            {
+                Button = { Close = MyVotePanel, Color = $"{buttonCloseColor}" },
+                RectTransform = { AnchorMin = "0.85 0.85", AnchorMax = "0.95 0.95" },
+                Text = { Text = "[X]\nClose", FontSize = 16, Align = TextAnchor.MiddleCenter }
+            }, MyVotePanel);
             CuiElement.Add(new CuiButton
             {
                 Button = { Command = "TellMyVoteChangeStatus info", Color = $"{HelpButtonColor}" },
@@ -639,255 +672,54 @@ namespace Oxide.Plugins
 
             #endregion
 
-            #region COLONNE GAUCHE
-
-            if (polls[0, 0] != string.Empty)
+            #region POLLS DRAWING
+            for (int y = 0; y < polls.GetLength(0); y++)
             {
-                CuiElement.Add(new CuiLabel
+                if (polls[y, 0] != string.Empty)
                 {
-                    RectTransform = { AnchorMin = $"{debutcolonne1} {basligne1}", AnchorMax = $"{fincolonne1b} {hautligne1}" },
-                    Text = { Text = $"#1. {polls[0, 0]}", Color = $"{QuestionColor}", FontSize = 16, Align = TextAnchor.MiddleLeft }
-                }, MyVotePanel);
-
-                if (polls[0, 1] != string.Empty)
-                {
-                    CuiElement.Add(new CuiButton
+                    int midY = y / 2;
+                    int YpollIndex = midY * 4;
+                    int XpollIndex = (y % 2) * 8;
+                    string column1Begin = pos_cols[YpollIndex];
+                    string column1End = pos_cols[YpollIndex + 1];
+                    string column2Begin = pos_cols[YpollIndex + 2];
+                    string column2End = pos_cols[YpollIndex + 3];
+                    string row1Begin = pos_rows[XpollIndex + 1];
+                    string row1End = pos_rows[XpollIndex];
+                    CuiElement.Add(new CuiLabel
                     {
-                        Button = { Command = "TellMyVote 1", Color = $"{AnswerColor}" },
-                        RectTransform = { AnchorMin = $"{debutcolonne1} {basligne2}", AnchorMax = $"{fincolonne1} {hautligne2}" },
-                        Text = { Text = $"{polls[0, 1]}", Color = "0.0 0.0 0.0 1", FontSize = 14, Align = TextAnchor.MiddleCenter }
+                        RectTransform = { AnchorMin = $"{column1Begin} {row1Begin}", AnchorMax = $"{column2End} {row1End}" },
+                        Text = { Text = $"#{y + 1}. {polls[y, 0]}", Color = $"{QuestionColor}", FontSize = 16, Align = TextAnchor.MiddleLeft }
                     }, MyVotePanel);
 
-                    CuiElement.Add(new CuiButton
+                    for (int x = 1; x < polls.GetLength(1); x++)
                     {
-                        Button = { Command = "", Color = $"{CountColor}" },
-                        RectTransform = { AnchorMin = $"{debutcolonne1b} {basligne2}", AnchorMax = $"{fincolonne1b} {hautligne2}" },
-                        Text = { Text = $"{storedData.answers[0]}", Color = "0.0 0.0 0.0 1", FontSize = 14, Align = TextAnchor.MiddleCenter }
-                    }, MyVotePanel);
-                }
+                        if (polls[y, x] != string.Empty)
+                        {
+                            int xRowIndex = XpollIndex + x * 2;
+                            string rowBegin = pos_rows[xRowIndex + 1];
+                            string rowEnd = pos_rows[xRowIndex];
+                            CuiElement.Add(new CuiButton
+                            {
+                                Button = { Command = $"TellMyVote {y * 3 + x}", Color = $"{AnswerColor}" },
+                                RectTransform = { AnchorMin = $"{column1Begin} {rowBegin}", AnchorMax = $"{column1End} {rowEnd}" },
+                                Text = { Text = $"{polls[y, x]}", Color = "0.0 0.0 0.0 1", FontSize = 14, Align = TextAnchor.MiddleCenter }
+                            }, MyVotePanel);
 
-                if (polls[0, 2] != string.Empty)
-                {
-                    CuiElement.Add(new CuiButton
-                    {
-                        Button = { Command = "TellMyVote 2", Color = $"{AnswerColor}" },
-                        RectTransform = { AnchorMin = $"{debutcolonne1} {basligne3}", AnchorMax = $"{fincolonne1} {hautligne3}" },
-                        Text = { Text = $"{polls[0, 2]}", Color = "0.0 0.0 0.0 1", FontSize = 14, Align = TextAnchor.MiddleCenter }
-                    }, MyVotePanel);
+                            CuiElement.Add(new CuiButton
+                            {
+                                Button = { Command = "", Color = $"{CountColor}" },
+                                RectTransform = { AnchorMin = $"{column2Begin} {rowBegin}", AnchorMax = $"{column2End} {rowEnd}" },
+                                Text = { Text = $"{storedData.votes[y, x - 1].Count}", Color = "0.0 0.0 0.0 1", FontSize = 14, Align = TextAnchor.MiddleCenter }
+                            }, MyVotePanel);
+                        }
+                    }
 
-                    CuiElement.Add(new CuiButton
-                    {
-                        Button = { Command = "", Color = $"{CountColor}" },
-                        RectTransform = { AnchorMin = $"{debutcolonne1b} {basligne3}", AnchorMax = $"{fincolonne1b} {hautligne3}" },
-                        Text = { Text = $"{storedData.answers[1]}", Color = "0.0 0.0 0.0 1", FontSize = 14, Align = TextAnchor.MiddleCenter }
-                    }, MyVotePanel);
-                }
-                if (polls[0, 3] != string.Empty)
-                {
-                    CuiElement.Add(new CuiButton
-                    {
-                        Button = { Command = "TellMyVote 3", Color = $"{AnswerColor}" },
-                        RectTransform = { AnchorMin = $"{debutcolonne1} {basligne4}", AnchorMax = $"{fincolonne1} {hautligne4}" },
-                        Text = { Text = $"{polls[0, 3]}", Color = "0.0 0.0 0.0 1", FontSize = 14, Align = TextAnchor.MiddleCenter }
-                    }, MyVotePanel);
-
-                    CuiElement.Add(new CuiButton
-                    {
-                        Button = { Command = "", Color = $"{CountColor}" },
-                        RectTransform = { AnchorMin = $"{debutcolonne1b} {basligne4}", AnchorMax = $"{fincolonne1b} {hautligne4}" },
-                        Text = { Text = $"{storedData.answers[2]}", Color = "0.0 0.0 0.0 1", FontSize = 14, Align = TextAnchor.MiddleCenter }
-                    }, MyVotePanel);
                 }
             }
-
-            if (polls[1, 0] != string.Empty)
-            {
-                CuiElement.Add(new CuiLabel
-                {
-                    RectTransform = { AnchorMin = $"{debutcolonne1} {basligne5}", AnchorMax = $"{fincolonne1b} {hautligne5}" },
-                    Text = { Text = $"#2. {polls[1, 0]}", Color = $"{QuestionColor}", FontSize = 16, Align = TextAnchor.MiddleLeft }
-                }, MyVotePanel);
-
-                if (polls[1, 1] != string.Empty)
-                {
-                    CuiElement.Add(new CuiButton
-                    {
-                        Button = { Command = "TellMyVote 4", Color = $"{AnswerColor}" },
-                        RectTransform = { AnchorMin = $"{debutcolonne1} {basligne6}", AnchorMax = $"{fincolonne1} {hautligne6}" },
-                        Text = { Text = $"{polls[1, 1]}", Color = "0.0 0.0 0.0 1", FontSize = 14, Align = TextAnchor.MiddleCenter }
-                    }, MyVotePanel);
-
-                    CuiElement.Add(new CuiButton
-                    {
-                        Button = { Command = "", Color = $"{CountColor}" },
-                        RectTransform = { AnchorMin = $"{debutcolonne1b} {basligne6}", AnchorMax = $"{fincolonne1b} {hautligne6}" },
-                        Text = { Text = $"{storedData.answers[3]}", Color = "0.0 0.0 0.0 1", FontSize = 14, Align = TextAnchor.MiddleCenter }
-                    }, MyVotePanel);
-                }
-                if (polls[1, 2] != string.Empty)
-                {
-                    CuiElement.Add(new CuiButton
-                    {
-                        Button = { Command = "TellMyVote 5", Color = $"{AnswerColor}" },
-                        RectTransform = { AnchorMin = $"{debutcolonne1} {basligne7}", AnchorMax = $"{fincolonne1} {hautligne7}" },
-                        Text = { Text = $"{polls[1, 2]}", Color = "0.0 0.0 0.0 1", FontSize = 14, Align = TextAnchor.MiddleCenter }
-                    }, MyVotePanel);
-
-                    CuiElement.Add(new CuiButton
-                    {
-                        Button = { Command = "", Color = $"{CountColor}" },
-                        RectTransform = { AnchorMin = $"{debutcolonne1b} {basligne7}", AnchorMax = $"{fincolonne1b} {hautligne7}" },
-                        Text = { Text = $"{storedData.answers[4]}", Color = "0.0 0.0 0.0 1", FontSize = 14, Align = TextAnchor.MiddleCenter }
-                    }, MyVotePanel);
-                }
-                if (polls[1, 3] != string.Empty)
-                {
-                    CuiElement.Add(new CuiButton
-                    {
-                        Button = { Command = "TellMyVote 6", Color = $"{AnswerColor}" },
-                        RectTransform = { AnchorMin = $"{debutcolonne1} {basligne8}", AnchorMax = $"{fincolonne1} {hautligne8}" },
-                        Text = { Text = $"{polls[1, 3]}", Color = "0.0 0.0 0.0 1", FontSize = 14, Align = TextAnchor.MiddleCenter }
-                    }, MyVotePanel);
-
-                    CuiElement.Add(new CuiButton
-                    {
-                        Button = { Command = "", Color = $"{CountColor}" },
-                        RectTransform = { AnchorMin = $"{debutcolonne1b} {basligne8}", AnchorMax = $"{fincolonne1b} {hautligne8}" },
-                        Text = { Text = $"{storedData.answers[5]}", Color = "0.0 0.0 0.0 1", FontSize = 14, Align = TextAnchor.MiddleCenter }
-                    }, MyVotePanel);
-                }
-            }
-
-
-            #endregion
-
-            #region COLONNE DROITE
-
-            if (polls[2, 0] != string.Empty)
-            {
-                CuiElement.Add(new CuiLabel
-                {
-                    RectTransform = { AnchorMin = $"{debutcolonne2} {basligne1}", AnchorMax = $"{fincolonne2b} {hautligne1}" },
-                    Text = { Text = $"#3. {polls[2, 0]}", Color = $"{QuestionColor}", FontSize = 16, Align = TextAnchor.MiddleLeft }
-                }, MyVotePanel);
-
-                if (polls[2, 1] != string.Empty)
-                {
-                    CuiElement.Add(new CuiButton
-                    {
-                        Button = { Command = "TellMyVote 7", Color = $"{AnswerColor}" },
-                        RectTransform = { AnchorMin = $"{debutcolonne2} {basligne2}", AnchorMax = $"{fincolonne2} {hautligne2}" },
-                        Text = { Text = $"{polls[2, 1]}", Color = "0.0 0.0 0.0 1", FontSize = 14, Align = TextAnchor.MiddleCenter }
-                    }, MyVotePanel);
-
-                    CuiElement.Add(new CuiButton
-                    {
-                        Button = { Command = "", Color = $"{CountColor}" },
-                        RectTransform = { AnchorMin = $"{debutcolonne2b} {basligne2}", AnchorMax = $"{fincolonne2b} {hautligne2}" },
-                        Text = { Text = $"{storedData.answers[6]}", Color = "0.0 0.0 0.0 1", FontSize = 14, Align = TextAnchor.MiddleCenter }
-                    }, MyVotePanel);
-                }
-
-                if (polls[2, 2] != string.Empty)
-                {
-                    CuiElement.Add(new CuiButton
-                    {
-                        Button = { Command = "TellMyVote 8", Color = $"{AnswerColor}" },
-                        RectTransform = { AnchorMin = $"{debutcolonne2} {basligne3}", AnchorMax = $"{fincolonne2} {hautligne3}" },
-                        Text = { Text = $"{polls[2, 2]}", Color = "0.0 0.0 0.0 1", FontSize = 14, Align = TextAnchor.MiddleCenter }
-                    }, MyVotePanel);
-
-                    CuiElement.Add(new CuiButton
-                    {
-                        Button = { Command = "", Color = $"{CountColor}" },
-                        RectTransform = { AnchorMin = $"{debutcolonne2b} {basligne3}", AnchorMax = $"{fincolonne2b} {hautligne3}" },
-                        Text = { Text = $"{storedData.answers[7]}", Color = "0.0 0.0 0.0 1", FontSize = 14, Align = TextAnchor.MiddleCenter }
-                    }, MyVotePanel);
-                }
-                if (polls[2, 3] != string.Empty)
-                {
-                    CuiElement.Add(new CuiButton
-                    {
-                        Button = { Command = "TellMyVote 9", Color = $"{AnswerColor}" },
-                        RectTransform = { AnchorMin = $"{debutcolonne2} {basligne4}", AnchorMax = $"{fincolonne2} {hautligne4}" },
-                        Text = { Text = $"{polls[2, 3]}", Color = "0.0 0.0 0.0 1", FontSize = 14, Align = TextAnchor.MiddleCenter }
-                    }, MyVotePanel);
-
-                    CuiElement.Add(new CuiButton
-                    {
-                        Button = { Command = "", Color = $"{CountColor}" },
-                        RectTransform = { AnchorMin = $"{debutcolonne2b} {basligne4}", AnchorMax = $"{fincolonne2b} {hautligne4}" },
-                        Text = { Text = $"{storedData.answers[8]}", Color = "0.0 0.0 0.0 1", FontSize = 14, Align = TextAnchor.MiddleCenter }
-                    }, MyVotePanel);
-                }
-            }
-
-            if (polls[3, 0] != string.Empty)
-            {
-                CuiElement.Add(new CuiLabel
-                {
-                    RectTransform = { AnchorMin = $"{debutcolonne2} {basligne5}", AnchorMax = $"{fincolonne2b} {hautligne5}" },
-                    Text = { Text = $"#4. {polls[3, 0]}", Color = $"{QuestionColor}", FontSize = 16, Align = TextAnchor.MiddleLeft }
-                }, MyVotePanel);
-                if (polls[3, 1] != string.Empty)
-                {
-                    CuiElement.Add(new CuiButton
-                    {
-                        Button = { Command = "TellMyVote 10", Color = $"{AnswerColor}" },
-                        RectTransform = { AnchorMin = $"{debutcolonne2} {basligne6}", AnchorMax = $"{fincolonne2} {hautligne6}" },
-                        Text = { Text = $"{polls[3, 1]}", Color = "0.0 0.0 0.0 1", FontSize = 14, Align = TextAnchor.MiddleCenter }
-                    }, MyVotePanel);
-
-                    CuiElement.Add(new CuiButton
-                    {
-                        Button = { Command = "", Color = $"{CountColor}" },
-                        RectTransform = { AnchorMin = $"{debutcolonne2b} {basligne6}", AnchorMax = $"{fincolonne2b} {hautligne6}" },
-                        Text = { Text = $"{storedData.answers[9]}", Color = "0.0 0.0 0.0 1", FontSize = 14, Align = TextAnchor.MiddleCenter }
-                    }, MyVotePanel);
-                }
-                if (polls[3, 2] != string.Empty)
-                {
-                    CuiElement.Add(new CuiButton
-                    {
-                        Button = { Command = "TellMyVote 11", Color = $"{AnswerColor}" },
-                        RectTransform = { AnchorMin = $"{debutcolonne2} {basligne7}", AnchorMax = $"{fincolonne2} {hautligne7}" },
-                        Text = { Text = $"{polls[3, 2]}", Color = "0.0 0.0 0.0 1", FontSize = 14, Align = TextAnchor.MiddleCenter }
-                    }, MyVotePanel);
-
-
-                    CuiElement.Add(new CuiButton
-                    {
-                        Button = { Command = "", Color = $"{CountColor}" },
-                        RectTransform = { AnchorMin = $"{debutcolonne2b} {basligne7}", AnchorMax = $"{fincolonne2b} {hautligne7}" },
-                        Text = { Text = $"{storedData.answers[10]}", Color = "0.0 0.0 0.0 1", FontSize = 14, Align = TextAnchor.MiddleCenter }
-                    }, MyVotePanel);
-                }
-                if (polls[3, 3] != string.Empty)
-                {
-                    CuiElement.Add(new CuiButton
-                    {
-                        Button = { Command = "TellMyVote 12", Color = $"{AnswerColor}" },
-                        RectTransform = { AnchorMin = $"{debutcolonne2} {basligne8}", AnchorMax = $"{fincolonne2} {hautligne8}" },
-                        Text = { Text = $"{polls[3, 3]}", Color = "0.0 0.0 0.0 1", FontSize = 14, Align = TextAnchor.MiddleCenter }
-                    }, MyVotePanel);
-
-                    CuiElement.Add(new CuiButton
-                    {
-                        Button = { Command = "", Color = $"{CountColor}" },
-                        RectTransform = { AnchorMin = $"{debutcolonne2b} {basligne8}", AnchorMax = $"{fincolonne2b} {hautligne8}" },
-                        Text = { Text = $"{storedData.answers[11]}", Color = "0.0 0.0 0.0 1", FontSize = 14, Align = TextAnchor.MiddleCenter }
-                    }, MyVotePanel);
-                }
-            }
-
             CuiHelper.AddUi(player, CuiElement);
         }
         #endregion
 
     }
 }
-
-/*
-banner all other players when a player votes
-server rewards points when votes
-*/
