@@ -11,7 +11,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Tell My Vote", "BuzZ[PHOQUE] & Spiikesan", "1.1.0")]
+    [Info("Tell My Vote", "Spiikesan", "1.1.0")]
     [Description("A Cui panel for players to vote at admin polls")]
 
     /*======================================================================================================================= 
@@ -89,7 +89,8 @@ namespace Oxide.Plugins
         ulong SteamIDIcon = 76561198215959719;          // SteamID FOR PLUGIN ICON
         private bool ConfigChanged;
 
-        float BannerTimer = 10;
+        float BannerShowTimer = 30;
+        float BannerHideTimer = 30;
 
         string[,] polls = new string[4, 4];
         private Timer tmvbanner;
@@ -144,7 +145,8 @@ namespace Oxide.Plugins
             PrefixColor = Convert.ToString(GetConfig("Chat Settings", "PrefixColor", "#c12300"));           // CHAT PLUGIN PREFIX COLOR
             ChatColor = Convert.ToString(GetConfig("Chat Settings", "ChatColor", "#ffcd7c"));               // CHAT  COLOR
             SteamIDIcon = Convert.ToUInt64(GetConfig("Settings", "SteamIDIcon", 76561198215959719));        // SteamID FOR PLUGIN ICON
-            BannerTimer = Convert.ToSingle(GetConfig("TIMER", "Vote Banner will display every (in minutes)", "10"));
+            BannerShowTimer = Convert.ToSingle(GetConfig("TIMER", "Vote Banner will display every (in seconds)", "30"));
+            BannerHideTimer = Convert.ToSingle(GetConfig("TIMER", "Banner hide (in seconds)", "30"));
             for (int poll = 0; poll < polls.GetLength(0); poll++)
             {
                 for (int answer = 0; answer < polls.GetLength(1); answer++)
@@ -516,7 +518,7 @@ namespace Oxide.Plugins
                     RectTransform = { AnchorMin = "0.10 0.10", AnchorMax = "0.90 0.90" }
                 }, MyVoteBanner);
                 CuiHelper.AddUi(player, CuiElement);
-                timer.Once(state == "start" ? 30f : 10f, () =>
+                timer.Once(state == "start" ? BannerHideTimer : BannerHideTimer / 3f, () =>
                 {
                     CuiHelper.DestroyUi(player, MyVoteBanner);
                 });
@@ -533,7 +535,7 @@ namespace Oxide.Plugins
             {
                 if (tmvbanner == null)
                 {
-                    tmvbanner = timer.Every(30f, () =>
+                    tmvbanner = timer.Every(BannerShowTimer, () =>
                     {
                         PopUpVote("start");
                     });
