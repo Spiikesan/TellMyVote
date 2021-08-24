@@ -1,4 +1,5 @@
 using Oxide.Core;
+using Oxide.Core.Libraries.Covalence;
 using Oxide.Core.Plugins;
 using Oxide.Game.Rust.Cui;
 using Rust;
@@ -11,7 +12,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Tell My Vote", "Spiikesan", "1.1.0")]
+    [Info("Tell My Vote", "Spiikesan", "1.2.0")]
     [Description("A Cui panel for players to vote at admin polls")]
 
     /*======================================================================================================================= 
@@ -22,7 +23,7 @@ namespace Oxide.Plugins
     *   1.0.0   20190906    code refresh
     *
     *   permission : tellmyvote.admin
-    *   chat commands   /myvote     /myvote_poll X Y [args]
+    *   chat commands   /{PanelCommand}     /myvote_poll X Y [args]
     *   It is case sensitive
     *   
     *   example :   /myvote_poll 1 0 question       ---> set "question" for poll#1 title
@@ -78,15 +79,34 @@ namespace Oxide.Plugins
         const string QuestionColor = "1.0 1.0 1.0 1.0";
         const string AnswerColor = "0.5 1.0 0.5 0.5";
         const string CountColor = "0.0 1.0 1.0 0.5";
-        const string version = "version 1.1.0";
         const bool debug = false;
         const string TMVAdmin = "tellmyvote.admin";
+        const string DataFilename = "TellMyVote";
+
+        bool ClearDataOnWipe = false;
+
         static string MyVotePanel;
         static string MyVoteInfoPanel;
+
         string Prefix = "[TMV] :";                      // CHAT PLUGIN PREFIX
         string PrefixColor = "#c12300";                 // CHAT PLUGIN PREFIX COLOR
         string ChatColor = "#ffcd7c";                   // CHAT MESSAGE COLOR
-        ulong SteamIDIcon = 76561198215959719;          // SteamID FOR PLUGIN ICON
+
+        string PanelTitle = "Tell My Vote Panel";
+        string PanelCommand = "myvote";
+
+        string BannerColor = "0.5 1.0 0.5 0.5";
+        float BannerSizeX = 0.6f;
+        float BannerSizeY = 0.05f;
+        float BannerPositionX = 0.2f;
+        float BannerPositionY = 0.1f;
+        bool BannerMsgEnabled = true;
+        bool ChatMsgEnabled = false;
+        string BannerAnchorMin = "0.20 0.85";
+        string BannerAnchorMax = "0.80 0.90";
+
+        ulong SteamIDIcon = 76561198049668039;          // SteamID FOR PLUGIN ICON
+        float VoteDurationMax = 0.0f;
         private bool ConfigChanged;
 
         float BannerShowTimer = 30;
@@ -100,7 +120,7 @@ namespace Oxide.Plugins
             LoadVariables();
             permission.RegisterPermission(TMVAdmin, this);
             GenerateCoordinates();
-            storedData = Interface.Oxide.DataFileSystem.ReadObject<StoredData>("TellMyVote");
+            storedData = Interface.Oxide.DataFileSystem.ReadObject<StoredData>(DataFilename);
         }
 
         #region CONFIG
@@ -111,17 +131,32 @@ namespace Oxide.Plugins
             LoadVariables();
         }
 
+        private void OnNewSave(string filename)
+        {
+            if (ClearDataOnWipe)
+            {
+                if (Interface.Oxide.DataFileSystem.ExistsDatafile(DataFilename))
+                {
+                    Interface.Oxide.DataFileSystem.GetFile(DataFilename).Clear();
+                    Interface.Oxide.DataFileSystem.GetFile(DataFilename).Save();
+
+                    Puts($"Server wipe detected, '{DataFilename}.json' wiped as well.");
+                }
+            }
+        }
+
         private void GenerateCoordinates()
         {
+            //Vote polls
             for (int i = 0; i < pos_rows.Length; i++)
             {
                 int polls = i / 8;         // 0, 0, 0, 0, 0, 0, 0, 0, 1...
                 int rows = i % 8;         //0, 1, 2, 3, 4, 5, 6, 7, 0...
-                pos_rows[pos_rows.Length - i - 1] = ((MARGIN_TB //y coordinates are inverted...
+                pos_rows[pos_rows.Length - i - 1] = formatFloat((MARGIN_TB //y coordinates are inverted...
                                 + polls * (PollHeight + SEP_IN) //Polls separation (is 0 for i in [0...7])
                                 + (rows / 2) * SEP_IN
                                 + ((rows + 1) / 2) * SIZE_ROW //Rows end : 0, 1, 1, 2, 2, 3, 3, 4, 0...
-                              )).ToString("F", CultureInfo.InvariantCulture);
+                              ));
                 if (debug) { Puts($"pos_rows[{pos_rows.Length - i - 1}] = {pos_rows[pos_rows.Length - i - 1]}"); }
             }
 
@@ -130,23 +165,43 @@ namespace Oxide.Plugins
                 int polls = i / 4;           // 0, 0, 0, 0, 1, 1, 1, 1
                 int columns = i % 4;         // 0, 1, 2, 3, 0, 1, 2, 4
                 int subcolumn = columns / 2; // 0, 0, 1, 1, 0, 0, 1, 1
-                pos_cols[i] = (MARGIN_LR
+                pos_cols[i] = formatFloat(MARGIN_LR
                                 + polls * (PollWidth + SEP_POLL) //Poll separation (is 0 for i in [0..3])
                                 + (columns / 2) * (SIZE_SUBCOL_1 + SEP_IN) //Answer or Result column begins
                                 + (columns % 2) * (subcolumn == 1 ? SIZE_SUBCOL_2 : SIZE_SUBCOL_1) //Answer or Result column end
-                              ).ToString("F", CultureInfo.InvariantCulture);
+                              );
                 if (debug) { Puts($"pos_col[{i}] = {pos_cols[i]}"); }
             }
+
+            //Banner
+            BannerAnchorMin = formatFloat(BannerPositionX) + " " + formatFloat(1.0f - (BannerPositionY + BannerSizeY));
+            BannerAnchorMax = formatFloat(BannerPositionX + BannerSizeX) + " " + formatFloat(1.0f - BannerPositionY);
         }
 
         private void LoadVariables()
         {
+            SteamIDIcon = Convert.ToUInt64(GetConfig("Settings", "SteamIDIcon", 76561198049668039));        // SteamID FOR PLUGIN ICON
+            ClearDataOnWipe = Convert.ToBoolean(GetConfig("Settings", "Clear data on server wipe", false));
+            VoteDurationMax = Convert.ToSingle(GetConfig("Settings", "Max duration of votes, (in seconds)", 0.0f));
+
+            ChatMsgEnabled = Convert.ToBoolean(GetConfig("Chat Settings", "Chat announcement", true));
             Prefix = Convert.ToString(GetConfig("Chat Settings", "Prefix", "[TMV] :"));                     // CHAT PLUGIN PREFIX
             PrefixColor = Convert.ToString(GetConfig("Chat Settings", "PrefixColor", "#c12300"));           // CHAT PLUGIN PREFIX COLOR
             ChatColor = Convert.ToString(GetConfig("Chat Settings", "ChatColor", "#ffcd7c"));               // CHAT  COLOR
-            SteamIDIcon = Convert.ToUInt64(GetConfig("Settings", "SteamIDIcon", 76561198215959719));        // SteamID FOR PLUGIN ICON
-            BannerShowTimer = Convert.ToSingle(GetConfig("TIMER", "Vote Banner will display every (in seconds)", "30"));
-            BannerHideTimer = Convert.ToSingle(GetConfig("TIMER", "Banner hide (in seconds)", "30"));
+
+            BannerShowTimer = Convert.ToSingle(GetConfig("Banner Settings", "Vote Banner will display every (in seconds)", "30"));
+            BannerHideTimer = Convert.ToSingle(GetConfig("Banner Settings", "Banner hide (in seconds)", "30"));
+            BannerMsgEnabled = Convert.ToBoolean(GetConfig("Banner Settings", "Banner Enabled", true));
+            BannerColor = Convert.ToString(GetConfig("Banner Settings", "Banner color", "0.5 1.0 0.5 0.5"));
+            BannerPositionX = Convert.ToSingle(GetConfig("Banner Settings", "Banner position X", "0.2"));
+            BannerPositionY = Convert.ToSingle(GetConfig("Banner Settings", "Banner position Y", "0.1"));
+            BannerSizeX = Convert.ToSingle(GetConfig("Banner Settings", "Banner size X", "0.6"));
+            BannerSizeY = Convert.ToSingle(GetConfig("Banner Settings", "Banner size Y", "0.05"));
+
+            PanelTitle = Convert.ToString(GetConfig("Panel Settings", "Title", "Tell My Vote Panel"));
+            PanelCommand = Convert.ToString(GetConfig("Panel Settings", "Command", "myvote"));
+
+
             for (int poll = 0; poll < polls.GetLength(0); poll++)
             {
                 for (int answer = 0; answer < polls.GetLength(1); answer++)
@@ -199,6 +254,7 @@ namespace Oxide.Plugins
 
         void Loaded()
         {
+            cmd.AddChatCommand(PanelCommand, this, "TellMyVotePanel");
             if (storedData.myVoteIsON == true)
             {
                 PopUpVote("start");
@@ -207,7 +263,7 @@ namespace Oxide.Plugins
 
         void Unload()
         {
-            Interface.Oxide.DataFileSystem.WriteObject("TellMyVote", storedData);
+            Interface.Oxide.DataFileSystem.WriteObject(DataFilename, storedData);
             if (tmvbanner != null) tmvbanner.Destroy();
         }
 
@@ -222,7 +278,8 @@ namespace Oxide.Plugins
                 {"AdminPermMsg", "You are allowed as admin. You can start/end/clear the votes."},
                 {"QAlreadyMsg", "You already have voted for this Question"},
                 {"VoteLogMsg", "Thank you, we recorded your vote for Question"},
-                {"VoteBannerMsg", "To help our community : please vote with /myvote or click here"},
+                {"VoteBannerMsg", "To help our community : please vote with /{0} or click here"},
+                {"VoteChatMsg", "To help our community : please vote with /{0}"},
                 {"TMVoffMsg", "Vote session is now over."},
                 {"PurgeMsg", "Counters has been reset"},
                 {"Info01Msg", "Players with admin permission can start/end/clear votes from main panel"},
@@ -239,7 +296,8 @@ namespace Oxide.Plugins
                 {"AdminPermMsg", "Vous êtes admin. et avez accès aux commandes start/end/clear."},
                 {"QAlreadyMsg", "Vous avez déjà voté à cette question."},
                 {"VoteLogMsg", "Merci, nous avons enregistré votre choix."},
-                {"VoteBannerMsg", "Pour aider la communauté : votez avec /myvote ou cliquez ici"},
+                {"VoteBannerMsg", "Pour aider la communauté : votez avec /{0} ou cliquez ici"},
+                {"VoteChatMsg", "Pour aider la communauté : votez avec /{0} ou cliquez ici"},
                 {"TMVoffMsg", "Le sondage est maintenant terminé."},
                 {"PurgeMsg", "Les compteurs sont remis à zéro."},
                 {"Info01Msg", "La permission .admin permet de lancer/stopper/purger depuis le panneau principal"},
@@ -416,7 +474,6 @@ namespace Oxide.Plugins
 
         private void RefreshMyVotePanel(BasePlayer player)
         {
-            CuiHelper.DestroyUi(player, MyVotePanel);
             TellMyVotePanel(player, null, null);
         }
         #endregion
@@ -439,6 +496,14 @@ namespace Oxide.Plugins
                 storedData.myVoteIsON = true;
                 PopUpVote("start");
                 RefreshMyVotePanel(player);
+                if (VoteDurationMax > float.Epsilon)
+                {
+                    timer.Once(VoteDurationMax, () =>
+                    {
+                        arg.Args = new string[] { "end" };
+                        TellMyVoteChangeStatus(arg);
+                    });
+                }
             }
             else if (arg.Args.Contains("end"))
             {
@@ -487,6 +552,7 @@ namespace Oxide.Plugins
         private void PopUpPlayer(BasePlayer player, string state)
         {
             string bannertxt = "";
+            string chattxt = "";
 
             bool playerVoteNeeded = false;
 
@@ -500,28 +566,36 @@ namespace Oxide.Plugins
             {
                 if (state == "start")
                 {
-                    bannertxt = $"{lang.GetMessage("VoteBannerMsg", this, player.UserIDString)}";
+                    bannertxt = $"{string.Format(lang.GetMessage("VoteBannerMsg", this, player.UserIDString), PanelCommand)}";
+                    chattxt = $"{string.Format(lang.GetMessage("VoteChatMsg", this, player.UserIDString), PanelCommand)}";
                 }
                 else if (state == "end")
                 {
-                    bannertxt = $"{lang.GetMessage("TMVoffMsg", this, player.UserIDString)}";
+                    bannertxt = chattxt = $"{lang.GetMessage("TMVoffMsg", this, player.UserIDString)}";
                 }
 
-                CuiElementContainer CuiElement = new CuiElementContainer();
-                var MyVoteBanner = CuiElement.Add(new CuiPanel { Image = { Color = "0.5 1.0 0.5 0.5" }, RectTransform = { AnchorMin = "0.20 0.85", AnchorMax = "0.80 0.90" }, CursorEnabled = false });
-                var closeButton = new CuiButton { Button = { Close = MyVoteBanner, Color = "0.0 0.0 0.0 0.6" }, RectTransform = { AnchorMin = "0.90 0.01", AnchorMax = "0.99 0.99" }, Text = { Text = "X", FontSize = 18, Align = TextAnchor.MiddleCenter } };
-                CuiElement.Add(closeButton, MyVoteBanner);
-                CuiElement.Add(new CuiButton
+                if (ChatMsgEnabled)
                 {
-                    Button = { Command = "chat.say /myvote", Color = "0.0 0.0 0.0 0.0" },
-                    Text = { Text = $"{bannertxt}", FontSize = 20, Align = TextAnchor.MiddleCenter, Color = "0.0 0.0 0.0 1" },
-                    RectTransform = { AnchorMin = "0.10 0.10", AnchorMax = "0.90 0.90" }
-                }, MyVoteBanner);
-                CuiHelper.AddUi(player, CuiElement);
-                timer.Once(state == "start" ? BannerHideTimer : BannerHideTimer / 3f, () =>
+                    Player.Message(player, $"<color={ChatColor}>{chattxt}</color>", $"<color={PrefixColor}> {Prefix} </color>", SteamIDIcon);
+                }
+                if (BannerMsgEnabled)
                 {
-                    CuiHelper.DestroyUi(player, MyVoteBanner);
-                });
+                    CuiElementContainer CuiElement = new CuiElementContainer();
+                    var MyVoteBanner = CuiElement.Add(new CuiPanel { Image = { Color = BannerColor }, RectTransform = { AnchorMin = BannerAnchorMin, AnchorMax = BannerAnchorMax }, CursorEnabled = false });
+                    var closeButton = new CuiButton { Button = { Close = MyVoteBanner, Color = "0.0 0.0 0.0 0.6" }, RectTransform = { AnchorMin = "0.90 0.01", AnchorMax = "0.99 0.99" }, Text = { Text = "X", FontSize = 18, Align = TextAnchor.MiddleCenter } };
+                    CuiElement.Add(closeButton, MyVoteBanner);
+                    CuiElement.Add(new CuiButton
+                    {
+                        Button = { Command = $"chat.say /{PanelCommand}", Color = "0.0 0.0 0.0 0.0" },
+                        Text = { Text = $"{bannertxt}", FontSize = 20, Align = TextAnchor.MiddleCenter, Color = "0.0 0.0 0.0 1" },
+                        RectTransform = { AnchorMin = "0.10 0.10", AnchorMax = "0.90 0.90" }
+                    }, MyVoteBanner);
+                    CuiHelper.AddUi(player, CuiElement);
+                    timer.Once(state == "start" ? BannerHideTimer : BannerHideTimer / 3f, () =>
+                    {
+                        CuiHelper.DestroyUi(player, MyVoteBanner);
+                    });
+                }
             }
         }
 
@@ -543,8 +617,11 @@ namespace Oxide.Plugins
             }
             else
             {
-                tmvbanner.Destroy();
-                tmvbanner = null;
+                if (tmvbanner != null)
+                {
+                    tmvbanner.Destroy();
+                    tmvbanner = null;
+                }
             }
         }
 
@@ -580,7 +657,7 @@ namespace Oxide.Plugins
             }, MyVoteInfoPanel);
             var TextIntro = CuiElement.Add(new CuiLabel
             {
-                Text = { Color = "1.0 1.0 1.0 1.0", Text = "Tell My Vote Panel", FontSize = 22, Align = TextAnchor.MiddleCenter },
+                Text = { Color = "1.0 1.0 1.0 1.0", Text = PanelTitle, FontSize = 22, Align = TextAnchor.MiddleCenter },
                 RectTransform = { AnchorMin = $"0.30 0.87", AnchorMax = "0.70 0.95" }
             }, MyVoteInfoPanel);
             var ButtonAnswer1 = CuiElement.Add(new CuiButton
@@ -595,7 +672,6 @@ namespace Oxide.Plugins
 
         #region TELLMYVOTE PANEL START
 
-        [ChatCommand("myvote")]
         private void TellMyVotePanel(BasePlayer player, string command, string[] args)
         {
             string StatusColor = "";
@@ -617,6 +693,7 @@ namespace Oxide.Plugins
             #region PANEL AND CLOSE BUTTON
 
             var CuiElement = new CuiElementContainer();
+            CuiHelper.DestroyUi(player, MyVotePanel);
             MyVotePanel = CuiElement.Add(new CuiPanel
             {
                 Image = { Color = $"{PanelColor}" },
@@ -637,12 +714,12 @@ namespace Oxide.Plugins
             }, MyVotePanel);
             CuiElement.Add(new CuiLabel
             {
-                Text = { Color = "1.0 1.0 1.0 1.0", Text = $"<i>{version}</i>", FontSize = 11, Align = TextAnchor.MiddleCenter },
+                Text = { Color = "1.0 1.0 1.0 1.0", Text = $"<i>version {Version}</i>", FontSize = 11, Align = TextAnchor.MiddleCenter },
                 RectTransform = { AnchorMin = $"0.78 0.78", AnchorMax = "0.95 0.84" }
             }, MyVotePanel);
             CuiElement.Add(new CuiLabel
             {
-                Text = { Color = "1.0 1.0 1.0 1.0", Text = "Tell My Vote Panel", FontSize = 22, Align = TextAnchor.MiddleCenter },
+                Text = { Color = "1.0 1.0 1.0 1.0", Text = PanelTitle, FontSize = 22, Align = TextAnchor.MiddleCenter },
                 RectTransform = { AnchorMin = $"0.30 0.87", AnchorMax = "0.70 0.95" }
             }, MyVotePanel);
             CuiElement.Add(new CuiLabel
@@ -723,5 +800,10 @@ namespace Oxide.Plugins
         }
         #endregion
 
+        #region UTILS
+
+        private string formatFloat(float f) => f.ToString("F", CultureInfo.InvariantCulture);
+
+        #endregion
     }
 }
