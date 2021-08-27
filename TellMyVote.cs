@@ -12,7 +12,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Tell My Vote", "Spiikesan", "1.2.0")]
+    [Info("Tell My Vote", "Spiikesan", "1.2.1")]
     [Description("A Cui panel for players to vote at admin polls")]
 
     /*======================================================================================================================= 
@@ -189,8 +189,8 @@ namespace Oxide.Plugins
             PrefixColor = Convert.ToString(GetConfig("Chat Settings", "PrefixColor", "#c12300"));           // CHAT PLUGIN PREFIX COLOR
             ChatColor = Convert.ToString(GetConfig("Chat Settings", "ChatColor", "#ffcd7c"));               // CHAT  COLOR
 
-            BannerShowTimer = Convert.ToSingle(GetConfig("Banner Settings", "Vote Banner will display every (in seconds)", "30"));
-            BannerHideTimer = Convert.ToSingle(GetConfig("Banner Settings", "Banner hide (in seconds)", "30"));
+            BannerShowTimer = Convert.ToSingle(GetConfig("Banner Settings", "Vote Banner will display every (in seconds)", "10"));
+            BannerHideTimer = Convert.ToSingle(GetConfig("Banner Settings", "Banner hide (in seconds)", "10"));
             BannerMsgEnabled = Convert.ToBoolean(GetConfig("Banner Settings", "Banner Enabled", true));
             BannerColor = Convert.ToString(GetConfig("Banner Settings", "Banner color", "0.5 1.0 0.5 0.5"));
             BannerPositionX = Convert.ToSingle(GetConfig("Banner Settings", "Banner position X", "0.2"));
@@ -427,6 +427,18 @@ namespace Oxide.Plugins
             return true;
         }
 
+        private bool voteNeeded(ulong playerID)
+        {
+            bool playerVoteNeeded = false;
+
+            for (int i = 0; i < storedData.votes.GetLength(0) && !playerVoteNeeded; i++)
+            {
+                playerVoteNeeded = voteNeeded(playerID, i);
+                if (debug) { Puts($"-> {playerID} Poll #{i} vote needed = {playerVoteNeeded}"); }
+            }
+            return playerVoteNeeded;
+        }
+
         [ConsoleCommand("TellMyVote")]
         private void MySurveySpotOnly(ConsoleSystem.Arg arg)
         {
@@ -474,6 +486,10 @@ namespace Oxide.Plugins
 
         private void RefreshMyVotePanel(BasePlayer player)
         {
+            if (!voteNeeded(player.userID))
+            {
+                CuiHelper.DestroyUi(player, "MyVoteBanner_" + player.UserIDString);
+            }
             TellMyVotePanel(player, null, null);
         }
         #endregion
@@ -514,8 +530,8 @@ namespace Oxide.Plugins
                     return;
                 }
                 storedData.myVoteIsON = false;
-                PopUpVote("end");
                 RefreshMyVotePanel(player);
+                PopUpVote("end");
             }
             else if (arg.Args.Contains("purge"))
             {
@@ -554,15 +570,7 @@ namespace Oxide.Plugins
             string bannertxt = "";
             string chattxt = "";
 
-            bool playerVoteNeeded = false;
-
-            for (int i = 0; i < storedData.votes.GetLength(0) && !playerVoteNeeded; i++)
-            {
-                playerVoteNeeded = voteNeeded(player.userID, i);
-                if (debug) { Puts($"-> {player} Poll #{i} vote needed = {playerVoteNeeded}"); }
-            }
-
-            if (playerVoteNeeded || state == "end")
+            if (voteNeeded(player.userID) || state == "end")
             {
                 if (state == "start")
                 {
@@ -580,8 +588,9 @@ namespace Oxide.Plugins
                 }
                 if (BannerMsgEnabled)
                 {
+                    CuiHelper.DestroyUi(player, "MyVoteBanner_" + player.UserIDString);
                     CuiElementContainer CuiElement = new CuiElementContainer();
-                    var MyVoteBanner = CuiElement.Add(new CuiPanel { Image = { Color = BannerColor }, RectTransform = { AnchorMin = BannerAnchorMin, AnchorMax = BannerAnchorMax }, CursorEnabled = false });
+                    var MyVoteBanner = CuiElement.Add(new CuiPanel { Image = { Color = BannerColor }, RectTransform = { AnchorMin = BannerAnchorMin, AnchorMax = BannerAnchorMax }, CursorEnabled = false }, "Hud", "MyVoteBanner_" + player.UserIDString);
                     var closeButton = new CuiButton { Button = { Close = MyVoteBanner, Color = "0.0 0.0 0.0 0.6" }, RectTransform = { AnchorMin = "0.90 0.01", AnchorMax = "0.99 0.99" }, Text = { Text = "X", FontSize = 18, Align = TextAnchor.MiddleCenter } };
                     CuiElement.Add(closeButton, MyVoteBanner);
                     CuiElement.Add(new CuiButton
@@ -645,8 +654,9 @@ namespace Oxide.Plugins
                 if (debug) { Puts($"-> NOT ADMIN access to info panel"); }
                 Player.Message(player, $"<color={ChatColor}>{lang.GetMessage("NoPermMsg", this, player.UserIDString)}</color>", $"<color={PrefixColor}> {Prefix} </color>", SteamIDIcon);
             }
+            CuiHelper.DestroyUi(player, "MyVoteInfoPanel_" + player.UserIDString);
             var CuiElement = new CuiElementContainer();
-            MyVoteInfoPanel = CuiElement.Add(new CuiPanel { Image = { Color = $"{PanelColor}" }, RectTransform = { AnchorMin = "0.25 0.25", AnchorMax = "0.75 0.80" }, CursorEnabled = true });
+            MyVoteInfoPanel = CuiElement.Add(new CuiPanel { Image = { Color = $"{PanelColor}" }, RectTransform = { AnchorMin = "0.25 0.25", AnchorMax = "0.75 0.80" }, CursorEnabled = true }, "Hud", "MyVoteInfoPanel_" + player.UserIDString);
             var closeButton = new CuiButton { Button = { Close = MyVoteInfoPanel, Color = $"{buttonCloseColor}" }, RectTransform = { AnchorMin = "0.85 0.85", AnchorMax = "0.95 0.95" }, Text = { Text = "[X]\nClose", FontSize = 16, Align = TextAnchor.MiddleCenter } };
             CuiElement.Add(closeButton, MyVoteInfoPanel);
             var BackButton = CuiElement.Add(new CuiButton
@@ -693,13 +703,13 @@ namespace Oxide.Plugins
             #region PANEL AND CLOSE BUTTON
 
             var CuiElement = new CuiElementContainer();
-            CuiHelper.DestroyUi(player, MyVotePanel);
+            CuiHelper.DestroyUi(player, "MyVotePanel_" + player.UserIDString);
             MyVotePanel = CuiElement.Add(new CuiPanel
             {
                 Image = { Color = $"{PanelColor}" },
                 RectTransform = { AnchorMin = "0.25 0.25", AnchorMax = "0.75 0.80" },
                 CursorEnabled = true
-            });
+            }, "Hud", "MyVotePanel_" + player.UserIDString);
             CuiElement.Add(new CuiButton
             {
                 Button = { Close = MyVotePanel, Color = $"{buttonCloseColor}" },

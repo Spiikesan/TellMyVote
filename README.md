@@ -14,8 +14,8 @@ If a Poll/Question is set to empty, it and its answers won't be displayed.
 If an Answer is set to empty, these answer line won't be displayed.
 
 ## Permission
-> No permission required to vote
-> `tellmyvote.admin` --- to use `/myvote_poll` chat command and Start/End/Clear on Cui Panel
+- No permission required to vote
+- `tellmyvote.admin` --- to use `/myvote_poll` chat command and Start/End/Clear on Cui Panel
 
 
 ## HowTo - user
