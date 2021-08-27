@@ -7,7 +7,7 @@ Tell My Vote displays a Cui Panel for Voting/Admin
 * A timer can be set to automatically ends the poll session.
 * You can choose to wipe the polls results when the server wipes.
 
-When a vote session has started, all online players will see a banner popup to ask for vote. (It's refreshed all 30 seconds by default)
+When a vote session has started, all online players will see a banner popup to ask for vote. (It's refreshed all 10 seconds by default). If no more vote is needed, the banner disappear and will not be shown anymore to the player.
 
 The banner is configurable (color, size, text and position) and can be disabled. A chat message can also be sent to players.
 
