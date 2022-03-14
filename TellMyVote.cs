@@ -85,8 +85,8 @@ namespace Oxide.Plugins
 
         bool ClearDataOnWipe = false;
 
-        static string MyVotePanel;
-        static string MyVoteInfoPanel;
+        string MyVotePanel;
+        string MyVoteInfoPanel;
 
         string Prefix = "[TMV] :";                      // CHAT PLUGIN PREFIX
         string PrefixColor = "#c12300";                 // CHAT PLUGIN PREFIX COLOR
@@ -152,10 +152,10 @@ namespace Oxide.Plugins
             {
                 int polls = i / 8;         // 0, 0, 0, 0, 0, 0, 0, 0, 1...
                 int rows = i % 8;         //0, 1, 2, 3, 4, 5, 6, 7, 0...
-                pos_rows[pos_rows.Length - i - 1] = formatFloat((MARGIN_TB //y coordinates are inverted...
+                pos_rows[pos_rows.Length - i - 1] = FormatFloat((MARGIN_TB //y coordinates are inverted...
                                 + polls * (PollHeight + SEP_IN) //Polls separation (is 0 for i in [0...7])
-                                + (rows / 2) * SEP_IN
-                                + ((rows + 1) / 2) * SIZE_ROW //Rows end : 0, 1, 1, 2, 2, 3, 3, 4, 0...
+                                + (rows / 2f) * SEP_IN
+                                + ((rows + 1) / 2f) * SIZE_ROW //Rows end : 0, 1, 1, 2, 2, 3, 3, 4, 0...
                               ));
                 if (debug) { Puts($"pos_rows[{pos_rows.Length - i - 1}] = {pos_rows[pos_rows.Length - i - 1]}"); }
             }
@@ -165,17 +165,17 @@ namespace Oxide.Plugins
                 int polls = i / 4;           // 0, 0, 0, 0, 1, 1, 1, 1
                 int columns = i % 4;         // 0, 1, 2, 3, 0, 1, 2, 4
                 int subcolumn = columns / 2; // 0, 0, 1, 1, 0, 0, 1, 1
-                pos_cols[i] = formatFloat(MARGIN_LR
+                pos_cols[i] = FormatFloat(MARGIN_LR
                                 + polls * (PollWidth + SEP_POLL) //Poll separation (is 0 for i in [0..3])
-                                + (columns / 2) * (SIZE_SUBCOL_1 + SEP_IN) //Answer or Result column begins
+                                + (columns / 2f) * (SIZE_SUBCOL_1 + SEP_IN) //Answer or Result column begins
                                 + (columns % 2) * (subcolumn == 1 ? SIZE_SUBCOL_2 : SIZE_SUBCOL_1) //Answer or Result column end
                               );
                 if (debug) { Puts($"pos_col[{i}] = {pos_cols[i]}"); }
             }
 
             //Banner
-            BannerAnchorMin = formatFloat(BannerPositionX) + " " + formatFloat(1.0f - (BannerPositionY + BannerSizeY));
-            BannerAnchorMax = formatFloat(BannerPositionX + BannerSizeX) + " " + formatFloat(1.0f - BannerPositionY);
+            BannerAnchorMin = FormatFloat(BannerPositionX) + " " + FormatFloat(1.0f - (BannerPositionY + BannerSizeY));
+            BannerAnchorMax = FormatFloat(BannerPositionX + BannerSizeX) + " " + FormatFloat(1.0f - BannerPositionY);
         }
 
         private void LoadVariables()
@@ -369,7 +369,7 @@ namespace Oxide.Plugins
 
                     if (pollnum >= 1 && pollnum <= 4)
                     {
-                        polls[pollnum - 1, 0] = ""; SetConfig("Poll #" + pollnum, "Question", "");
+                        polls[pollnum - 1, 0] = string.Empty; SetConfig("Poll #" + pollnum, "Question", string.Empty);
                         Player.Message(player, $"Poll#{args[0]} has been set to empty", $"<color={PrefixColor}> {Prefix} </color>", SteamIDIcon);
                         if (debug == true) { Puts($"-> SETTING POLL {args[0]}, with no arguments"); }
                     }
@@ -416,9 +416,9 @@ namespace Oxide.Plugins
 
         #region VOTING
 
-        private bool voteNeeded(ulong playerID, int pollNum)
+        private bool VoteNeeded(ulong playerID, int pollNum)
         {
-            if (polls[pollNum, 0] == string.Empty) return false;
+            if (polls[pollNum, 0].Length == 0) return false;
             for (int i = 0; i < storedData.votes.GetLength(1); i++)
             {
                 if (storedData.votes[pollNum, i].Contains(playerID))
@@ -427,13 +427,13 @@ namespace Oxide.Plugins
             return true;
         }
 
-        private bool voteNeeded(ulong playerID)
+        private bool VoteNeeded(ulong playerID)
         {
             bool playerVoteNeeded = false;
 
             for (int i = 0; i < storedData.votes.GetLength(0) && !playerVoteNeeded; i++)
             {
-                playerVoteNeeded = voteNeeded(playerID, i);
+                playerVoteNeeded = VoteNeeded(playerID, i);
                 if (debug) { Puts($"-> {playerID} Poll #{i} vote needed = {playerVoteNeeded}"); }
             }
             return playerVoteNeeded;
@@ -460,7 +460,7 @@ namespace Oxide.Plugins
                     else
                     {
 
-                        if (voteNeeded(playerID, pollnum))
+                        if (VoteNeeded(playerID, pollnum))
                         {
                             if (debug == true) { Puts($"-> answernumber = {answernumber + 1} - POLL #{pollnum + 1} vote recorded on {parameter + 1}"); }
                             storedData.votes[pollnum, parameter].Add(playerID);
@@ -486,7 +486,7 @@ namespace Oxide.Plugins
 
         private void RefreshMyVotePanel(BasePlayer player)
         {
-            if (!voteNeeded(player.userID))
+            if (!VoteNeeded(player.userID))
             {
                 CuiHelper.DestroyUi(player, "MyVoteBanner_" + player.UserIDString);
             }
@@ -567,10 +567,10 @@ namespace Oxide.Plugins
 
         private void PopUpPlayer(BasePlayer player, string state)
         {
-            string bannertxt = "";
-            string chattxt = "";
+            string bannertxt = string.Empty;
+            string chattxt = string.Empty;
 
-            if (voteNeeded(player.userID) || state == "end")
+            if (VoteNeeded(player.userID) || state == "end")
             {
                 if (state == "start")
                 {
@@ -672,7 +672,7 @@ namespace Oxide.Plugins
             }, MyVoteInfoPanel);
             var ButtonAnswer1 = CuiElement.Add(new CuiButton
             {
-                Button = { Command = "", Color = $"0.5 1.0 0.5 0.5" },
+                Button = { Command = string.Empty, Color = $"0.5 1.0 0.5 0.5" },
                 RectTransform = { AnchorMin = $"0.05 0.05", AnchorMax = $"0.95 0.70" },
                 Text = { Text = $"{information}", Color = "0.0 0.0 0.0 1", FontSize = 14, Align = TextAnchor.MiddleCenter }
             }, MyVoteInfoPanel);
@@ -684,8 +684,8 @@ namespace Oxide.Plugins
 
         private void TellMyVotePanel(BasePlayer player, string command, string[] args)
         {
-            string StatusColor = "";
-            string Status = "";
+            string StatusColor = string.Empty;
+            string Status = string.Empty;
             bool isadmin = permission.UserHasPermission(player.UserIDString, TMVAdmin);
             if (storedData.myVoteIsON == true)
             {
@@ -764,7 +764,7 @@ namespace Oxide.Plugins
             #region POLLS DRAWING
             for (int y = 0; y < polls.GetLength(0); y++)
             {
-                if (polls[y, 0] != string.Empty)
+                if (polls[y, 0].Length > 0)
                 {
                     int midY = y / 2;
                     int YpollIndex = midY * 4;
@@ -783,7 +783,7 @@ namespace Oxide.Plugins
 
                     for (int x = 1; x < polls.GetLength(1); x++)
                     {
-                        if (polls[y, x] != string.Empty)
+                        if (polls[y, x].Length > 0)
                         {
                             int xRowIndex = XpollIndex + x * 2;
                             string rowBegin = pos_rows[xRowIndex + 1];
@@ -797,7 +797,7 @@ namespace Oxide.Plugins
 
                             CuiElement.Add(new CuiButton
                             {
-                                Button = { Command = "", Color = $"{CountColor}" },
+                                Button = { Command = string.Empty, Color = $"{CountColor}" },
                                 RectTransform = { AnchorMin = $"{column2Begin} {rowBegin}", AnchorMax = $"{column2End} {rowEnd}" },
                                 Text = { Text = $"{storedData.votes[y, x - 1].Count}", Color = "0.0 0.0 0.0 1", FontSize = 14, Align = TextAnchor.MiddleCenter }
                             }, MyVotePanel);
@@ -812,7 +812,7 @@ namespace Oxide.Plugins
 
         #region UTILS
 
-        private string formatFloat(float f) => f.ToString("F", CultureInfo.InvariantCulture);
+        private string FormatFloat(float f) => f.ToString("F", CultureInfo.InvariantCulture);
 
         #endregion
     }
