@@ -12,7 +12,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Tell My Vote", "Spiikesan", "1.2.1")]
+    [Info("Tell My Vote", "Spiikesan", "1.2.2")]
     [Description("A Cui panel for players to vote at admin polls")]
 
     /*======================================================================================================================= 
@@ -165,12 +165,13 @@ namespace Oxide.Plugins
                 int polls = i / 4;           // 0, 0, 0, 0, 1, 1, 1, 1
                 int columns = i % 4;         // 0, 1, 2, 3, 0, 1, 2, 4
                 int subcolumn = columns / 2; // 0, 0, 1, 1, 0, 0, 1, 1
-                pos_cols[i] = FormatFloat(MARGIN_LR
-                                + polls * (PollWidth + SEP_POLL) //Poll separation (is 0 for i in [0..3])
-                                + (columns / 2f) * (SIZE_SUBCOL_1 + SEP_IN) //Answer or Result column begins
-                                + (columns % 2) * (subcolumn == 1 ? SIZE_SUBCOL_2 : SIZE_SUBCOL_1) //Answer or Result column end
-                              );
-                if (debug) { Puts($"pos_col[{i}] = {pos_cols[i]}"); }
+                                                                                                                           // 0.03, 0.03, 0.03, 0.03, 0.03, 0.03, 0.03, 0.03
+                float L1 = polls * (PollWidth + SEP_POLL); //Poll separation (is 0 for i in [0..3])                        // 0.00, 0.00, 0.00, 0.00, 0.49, 0.49, 0.49, 0.49
+                float L2 = (subcolumn) * (SIZE_SUBCOL_1 + SEP_IN); //Answer or Result column begins                        // 0.00, 0.00, 0.35, 0.35, 0.00, 0.00, 0.35, 0.35
+                float L3 = (columns % 2) * (subcolumn == 1 ? SIZE_SUBCOL_2 : SIZE_SUBCOL_1); //Answer or Result column end // 0.00, 0.34, 0.00, 0.10, 0.00, 0.34, 0.00, 0.10
+                                                                                                                           // 0.03, 0.37, 0.38, 0.48, 0.53, 0.86, 0.87, 0.97
+                pos_cols[i] = FormatFloat(MARGIN_LR + L1 + L2 + L3);                                                                                                 
+                if (debug) { Puts($"pos_col[{i}] = {pos_cols[i]}, L1={L1}, L2={L2}, L3={L3}"); }
             }
 
             //Banner
@@ -255,7 +256,7 @@ namespace Oxide.Plugins
         void Loaded()
         {
             cmd.AddChatCommand(PanelCommand, this, "TellMyVotePanel");
-            if (storedData.myVoteIsON == true)
+            if (storedData.myVoteIsON)
             {
                 PopUpVote("start");
             }
@@ -269,7 +270,7 @@ namespace Oxide.Plugins
 
         #region MESSAGES
 
-        void LoadDefaultMessages()
+        protected override void LoadDefaultMessages()
         {
 
             lang.RegisterMessages(new Dictionary<string, string>
@@ -369,9 +370,10 @@ namespace Oxide.Plugins
 
                     if (pollnum >= 1 && pollnum <= 4)
                     {
-                        polls[pollnum - 1, 0] = string.Empty; SetConfig("Poll #" + pollnum, "Question", string.Empty);
+                        polls[pollnum - 1, 0] = string.Empty;
+                        SetConfig("Poll #" + pollnum, "Question", string.Empty);
                         Player.Message(player, $"Poll#{args[0]} has been set to empty", $"<color={PrefixColor}> {Prefix} </color>", SteamIDIcon);
-                        if (debug == true) { Puts($"-> SETTING POLL {args[0]}, with no arguments"); }
+                        if (debug) { Puts($"-> SETTING POLL {args[0]}, with no arguments"); }
                     }
                 }
                 catch (Exception e)
@@ -462,14 +464,14 @@ namespace Oxide.Plugins
 
                         if (VoteNeeded(playerID, pollnum))
                         {
-                            if (debug == true) { Puts($"-> answernumber = {answernumber + 1} - POLL #{pollnum + 1} vote recorded on {parameter + 1}"); }
+                            if (debug) { Puts($"-> answernumber = {answernumber + 1} - POLL #{pollnum + 1} vote recorded on {parameter + 1}"); }
                             storedData.votes[pollnum, parameter].Add(playerID);
                             Player.Message(player, $"<color={ChatColor}>{lang.GetMessage("VoteLogMsg", this, player.UserIDString)} #{pollnum + 1}</color>", $"<color={PrefixColor}> {Prefix} </color>", SteamIDIcon);
                             RefreshMyVotePanel(player);
                         }
                         else
                         {
-                            if (debug == true) { Puts($"-> answernumber = {answernumber + 1} - POLL #{pollnum + 1} - already voted"); }
+                            if (debug) { Puts($"-> answernumber = {answernumber + 1} - POLL #{pollnum + 1} - already voted"); }
                             Player.Message(player, $"<color={ChatColor}>{lang.GetMessage("QAlreadyMsg", this, player.UserIDString)} #{pollnum + 1}</color>", $"<color={PrefixColor}> {Prefix} </color>", SteamIDIcon);
                         }
                     }
@@ -504,7 +506,7 @@ namespace Oxide.Plugins
             if (arg.Args.Contains("start"))
             {
                 if (debug) { Puts($"-> START OF MY VOTE"); }
-                if (storedData.myVoteIsON == true)
+                if (storedData.myVoteIsON)
                 {
                     if (debug) { Puts($"-> START ASKED, BUT MY VOTE ALREADY ON."); }
                     return;
@@ -687,7 +689,7 @@ namespace Oxide.Plugins
             string StatusColor = string.Empty;
             string Status = string.Empty;
             bool isadmin = permission.UserHasPermission(player.UserIDString, TMVAdmin);
-            if (storedData.myVoteIsON == true)
+            if (storedData.myVoteIsON)
             {
                 Status = "SESSION IS OPEN : CHOOSE YOUR ANSWERS !";
                 StatusColor = "0.2 1.0 0.2 0.8";
@@ -737,7 +739,7 @@ namespace Oxide.Plugins
                 Text = { Color = $"{StatusColor}", Text = $"{Status}", FontSize = 16, Align = TextAnchor.MiddleCenter },
                 RectTransform = { AnchorMin = $"0.23 0.78", AnchorMax = "0.77 0.86" }
             }, MyVotePanel);
-            if (isadmin == true)
+            if (isadmin)
             {
                 CuiElement.Add(new CuiButton
                 {
@@ -766,9 +768,9 @@ namespace Oxide.Plugins
             {
                 if (polls[y, 0].Length > 0)
                 {
-                    int midY = y / 2;
-                    int YpollIndex = midY * 4;
-                    int XpollIndex = (y % 2) * 8;
+                    int midY = y / 2; // 0, 0, 1, 1
+                    int YpollIndex = midY * 4; // 0, 0, 4, 4
+                    int XpollIndex = (y % 2) * 8; // 0, 8, 0, 8
                     string column1Begin = pos_cols[YpollIndex];
                     string column1End = pos_cols[YpollIndex + 1];
                     string column2Begin = pos_cols[YpollIndex + 2];
